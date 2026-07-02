@@ -1,0 +1,6 @@
+{
+  "name": "GTIDR",
+  "description": "Système intelligent de gestion et transport des déchets pour le recyclage au Gabon, avec géolocalisation précise et vérification par code.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
