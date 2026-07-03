@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { TrashType, QuantityInputType, RequestStatus, CollectionRequest, User } from '../types';
+import { TrashType, QuantityInputType, RequestStatus, CollectionRequest, User, NeighborhoodStats } from '../types';
 import { translations, Language } from '../utils/translations';
 import {
   Phone,
@@ -20,7 +20,9 @@ import {
   Flame,
   Globe,
   Loader2,
-  LayoutDashboard
+  LayoutDashboard,
+  Gamepad2,
+  Trophy
 } from 'lucide-react';
 
 interface UserMobileAppProps {
@@ -40,6 +42,8 @@ interface UserMobileAppProps {
   userRequestsHistory: CollectionRequest[];
   currentLang: Language;
   onSwitchToAdmin: () => void;
+  onChangeLang: (lang: Language) => void;
+  neighborhoodStats: NeighborhoodStats[];
 }
 
 export default function UserMobileApp({
@@ -52,11 +56,132 @@ export default function UserMobileApp({
   userRequestsHistory,
   currentLang,
   onSwitchToAdmin,
+  onChangeLang,
+  neighborhoodStats,
 }: UserMobileAppProps) {
   const t = translations[currentLang] || translations.fr;
 
   // Navigation tabs
-  const [activeTab, setActiveTab] = useState<'home' | 'history' | 'profile'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'history' | 'profile' | 'game' | 'leaderboard'>('home');
+
+  // Eco-Triage Game States
+  const [gameScore, setGameScore] = useState(0);
+  const [gameStreak, setGameStreak] = useState(0);
+  const [gameMessage, setGameMessage] = useState<{ text: string; isCorrect: boolean } | null>(null);
+  const [currentWasteIndex, setCurrentWasteIndex] = useState(0);
+  const [hasUnlockedBadge, setHasUnlockedBadge] = useState(false);
+
+  // Leaderboard interactive states
+  const [cheeredNeighborhood, setCheeredNeighborhood] = useState<string | null>(null);
+
+  const gameWasteItems = [
+    {
+      id: 'item-1',
+      name: currentLang === 'fr' ? 'Bouteille en plastique (PET)' : 'Plastic PET Bottle',
+      desc: currentLang === 'fr' ? 'Bouteille d\'eau minérale vide' : 'Empty mineral water bottle',
+      type: TrashType.RECYCLABLE,
+      emoji: '🧴',
+      fact: currentLang === 'fr' 
+        ? 'Le plastique PET est broyé en paillettes puis recyclé en fibres textiles ou nouvelles bouteilles au Gabon.' 
+        : 'PET plastic is shredded into flakes and recycled into textile fibers or new bottles in Gabon.'
+    },
+    {
+      id: 'item-2',
+      name: currentLang === 'fr' ? 'Épluchures de banane' : 'Banana peel',
+      desc: currentLang === 'fr' ? 'Déchets organiques humides' : 'Wet organic waste',
+      type: TrashType.ROTTEN,
+      emoji: '🍌',
+      fact: currentLang === 'fr' 
+        ? 'Les épluchures se décomposent pour former un compost riche pour les maraîchers de Libreville et d\'Akanda !' 
+        : 'Peels decompose to form a rich compost for the market gardeners of Libreville and Akanda!'
+    },
+    {
+      id: 'item-3',
+      name: currentLang === 'fr' ? 'Canette d\'aluminium' : 'Aluminum soda can',
+      desc: currentLang === 'fr' ? 'Canette de boisson gazeuse' : 'Soft drink can',
+      type: TrashType.RECYCLABLE,
+      emoji: '🥤',
+      fact: currentLang === 'fr' 
+        ? 'L\'aluminium est indéfiniment recyclable. Sa refonte consomme 95% d\'énergie en moins que sa production primaire.' 
+        : 'Aluminum is infinitely recyclable. Melting it down uses 95% less energy than primary production.'
+    },
+    {
+      id: 'item-4',
+      name: currentLang === 'fr' ? 'Restes de manioc' : 'Cassava leftovers',
+      desc: currentLang === 'fr' ? 'Épluchures ou morceaux non consommés' : 'Peelings or unconsumed pieces',
+      type: TrashType.ROTTEN,
+      emoji: '🍠',
+      fact: currentLang === 'fr' 
+        ? 'Les résidus de manioc sont d\'excellents activateurs de compostage grâce à leur teneur élevée en azote.' 
+        : 'Cassava residues are excellent composting activators thanks to their high nitrogen content.'
+    },
+    {
+      id: 'item-5',
+      name: currentLang === 'fr' ? 'Bocal en verre' : 'Glass Jar',
+      desc: currentLang === 'fr' ? 'Pot de confiture vide' : 'Empty jam jar',
+      type: TrashType.RECYCLABLE,
+      emoji: '🫙',
+      fact: currentLang === 'fr' 
+        ? 'Le verre propre est trié par couleur et recyclé à 100% sans perte de qualité !' 
+        : 'Clean glass is sorted by color and recycled 100% with no loss of quality!'
+    },
+    {
+      id: 'item-6',
+      name: currentLang === 'fr' ? 'Boîte de pizza en carton' : 'Cardboard Pizza Box',
+      desc: currentLang === 'fr' ? 'Carton d\'emballage propre' : 'Clean packaging cardboard',
+      type: TrashType.RECYCLABLE,
+      emoji: '📦',
+      fact: currentLang === 'fr' 
+        ? 'S\'il n\'est pas trop gras, le carton est broyé pour fabriquer de nouvelles caisses d\'expédition recyclées.' 
+        : 'If not too greasy, cardboard is pulped to manufacture new recycled shipping boxes.'
+    },
+    {
+      id: 'item-7',
+      name: currentLang === 'fr' ? 'Noyau d\'avocat' : 'Avocado Pit',
+      desc: currentLang === 'fr' ? 'Déchet de cuisine solide' : 'Solid kitchen waste',
+      type: TrashType.ROTTEN,
+      emoji: '🥑',
+      fact: currentLang === 'fr' 
+        ? 'Il met plusieurs mois à se décomposer mais apporte des nutriments stables au terreau final.' 
+        : 'It takes several months to decompose but brings stable nutrients to the final potting soil.'
+    }
+  ];
+
+  const handleSortItem = (selectedType: TrashType) => {
+    const currentItem = gameWasteItems[currentWasteIndex];
+    const isCorrect = currentItem.type === selectedType;
+
+    if (isCorrect) {
+      const newStreak = gameStreak + 1;
+      setGameStreak(newStreak);
+      setGameScore(prev => prev + 10);
+      setGameMessage({
+        text: `${t.correct} ${currentItem.fact}`,
+        isCorrect: true
+      });
+
+      // Earn badge at 5 streak
+      if (newStreak >= 5 && !hasUnlockedBadge) {
+        setHasUnlockedBadge(true);
+        if (currentUser) {
+          currentUser.is_certified_recycler = true;
+        }
+      }
+    } else {
+      setGameStreak(0);
+      setGameMessage({
+        text: `${t.incorrect} ${currentItem.name} -> ${
+          currentItem.type === TrashType.RECYCLABLE ? t.recyclableBin : t.organicBin
+        }`,
+        isCorrect: false
+      });
+    }
+  };
+
+  const handleNextItem = () => {
+    setGameMessage(null);
+    setCurrentWasteIndex((prev) => (prev + 1) % gameWasteItems.length);
+  };
 
   // Login Form States
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -200,14 +325,34 @@ export default function UserMobileApp({
     return (
       <div className="flex flex-col h-full bg-white text-slate-900 justify-between">
         {/* Flag top border */}
-        <div className="h-1.5 w-full flex">
+        <div className="h-1.5 w-full flex shrink-0">
           <div className="bg-[#009E49] h-full flex-1" />
           <div className="bg-[#FCD116] h-full flex-1" />
           <div className="bg-[#3A75C4] h-full flex-1" />
         </div>
 
+        {/* Compact Lang Switcher on Login Screen */}
+        <div className="flex justify-end px-4 pt-3 pb-1 shrink-0">
+          <div className="flex items-center gap-0.5 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+            {(['fr', 'en'] as Language[]).map((lang) => (
+              <button
+                key={lang}
+                type="button"
+                onClick={() => onChangeLang(lang)}
+                className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase transition-all cursor-pointer ${
+                  currentLang === lang
+                    ? 'bg-white text-slate-800 shadow-xs border border-slate-200/50'
+                    : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                {lang}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Content */}
-        <div className="px-5 py-6 flex flex-col justify-center items-center flex-1 overflow-y-auto">
+        <div className="px-5 py-4 flex flex-col justify-center items-center flex-1 overflow-y-auto">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#009E49] to-emerald-600 flex items-center justify-center text-white shadow-lg shadow-emerald-200 mb-3 shrink-0">
             <Globe className="w-8 h-8" />
           </div>
@@ -341,12 +486,23 @@ export default function UserMobileApp({
           </div>
         </div>
 
-        {/* Action icons / Mode Indicator */}
-        <div className="flex items-center gap-1">
-          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-[#009E49]/10 text-[#009E49] border border-[#009E49]/20 flex items-center gap-1">
-            <span className="w-1.5 h-1.5 bg-[#009E49] rounded-full animate-ping" />
-            {t.citizenBadge}
-          </span>
+        {/* Language setting button near location (right side of nav header) */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-0.5 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+            {(['fr', 'en'] as Language[]).map((lang) => (
+              <button
+                key={lang}
+                onClick={() => onChangeLang(lang)}
+                className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase transition-all cursor-pointer ${
+                  currentLang === lang
+                    ? 'bg-white text-slate-800 shadow-xs border border-slate-200/50'
+                    : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                {lang}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -790,6 +946,14 @@ export default function UserMobileApp({
                 </div>
 
                 <h4 className="text-sm font-bold text-slate-800 mt-2">{currentUser.full_name}</h4>
+                
+                {currentUser.is_certified_recycler && (
+                  <div className="inline-flex items-center gap-1 mt-1 bg-emerald-50 text-emerald-700 border border-emerald-100 px-2.5 py-0.5 rounded-full text-[9px] font-extrabold">
+                    <Trophy className="w-3 h-3 text-amber-500 fill-amber-500 animate-bounce" />
+                    <span>{t.certifiedBadge}</span>
+                  </div>
+                )}
+
                 <p className="text-[10px] text-slate-400 font-mono mt-0.5">{currentUser.phone_number}</p>
 
                 <div className="mt-3.5 pt-3 border-t border-slate-100 grid grid-cols-3 gap-1.5 text-center text-xs">
@@ -824,9 +988,9 @@ export default function UserMobileApp({
               {/* Logout button */}
               <div className="space-y-2 pt-2">
                 <button
-                  type="button"
-                  onClick={onLogout}
-                  className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                   type="button"
+                   onClick={onLogout}
+                   className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <LogOut className="w-3.5 h-3.5" />
                   <span>{t.logout}</span>
@@ -834,13 +998,308 @@ export default function UserMobileApp({
 
                 {/* Switch to Admin dashboard requested by user */}
                 <button
-                  type="button"
-                  onClick={onSwitchToAdmin}
-                  className="w-full bg-sky-950 hover:bg-sky-900 text-sky-400 border border-sky-900/40 font-bold py-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                   type="button"
+                   onClick={onSwitchToAdmin}
+                   className="w-full bg-sky-950 hover:bg-sky-900 text-sky-400 border border-sky-900/40 font-bold py-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                 >
                   <LayoutDashboard className="w-3.5 h-3.5 text-sky-400" />
                   <span>{t.adminDashboard}</span>
                 </button>
+              </div>
+            </motion.div>
+          )}
+
+          {/* D. ECO-GAME TAB */}
+          {activeTab === 'game' && (
+            <motion.div
+              key="tab-game"
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -5 }}
+              className="space-y-3.5"
+            >
+              <div className="bg-gradient-to-tr from-emerald-600 to-teal-500 text-white rounded-2xl p-4 shadow-md text-center relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-6 opacity-10 pointer-events-none">
+                  <Gamepad2 className="w-24 h-24 rotate-12" />
+                </div>
+                <h4 className="text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-yellow-300 animate-pulse" />
+                  <span>{t.gameHeader}</span>
+                </h4>
+                <p className="text-[10px] text-emerald-100 mt-1 max-w-xs mx-auto leading-relaxed">
+                  {t.gameDesc}
+                </p>
+
+                {/* Score & Streak Counters */}
+                <div className="mt-3.5 flex justify-center gap-4">
+                  <div className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/10 text-center min-w-[70px]">
+                    <div className="text-[9px] text-emerald-100">{t.score}</div>
+                    <div className="text-xs font-black text-yellow-300">{gameScore} pts</div>
+                  </div>
+                  <div className="bg-white/10 px-3 py-1.5 rounded-xl border border-white/10 text-center min-w-[70px] relative">
+                    <div className="text-[9px] text-emerald-100">{t.streak}</div>
+                    <div className="text-xs font-black text-yellow-300 flex items-center justify-center gap-0.5">
+                      {gameStreak} / 5
+                      {gameStreak > 0 && <Flame className="w-3.5 h-3.5 text-orange-400 fill-orange-400 animate-pulse" />}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Game Play Board */}
+              {hasUnlockedBadge && gameStreak >= 5 ? (
+                // Won Screen
+                <motion.div 
+                  initial={{ scale: 0.95 }}
+                  animate={{ scale: 1 }}
+                  className="bg-white rounded-2xl p-5 border-2 border-emerald-500/30 text-center space-y-4 shadow-lg"
+                >
+                  <div className="w-16 h-16 rounded-full bg-emerald-50 flex items-center justify-center mx-auto text-3xl shadow-inner border border-emerald-100">
+                    🏆
+                  </div>
+                  <div>
+                    <h5 className="text-xs font-extrabold text-emerald-700">{t.certifiedBadge} !</h5>
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      {t.congrats}
+                    </p>
+                  </div>
+                  
+                  {/* The Shiny Badge */}
+                  <div className="p-3 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 rounded-xl border border-emerald-500/20 text-[10px] font-bold text-emerald-800 flex items-center justify-center gap-2">
+                    <Trophy className="w-4 h-4 text-emerald-600 animate-bounce" />
+                    <span>{currentLang === 'fr' ? 'Badge Obtenu avec Succès !' : 'Badge Successfully Earned!'}</span>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setGameStreak(0);
+                    }}
+                    className="w-full bg-[#009E49] hover:bg-[#00863e] text-white font-black py-2.5 rounded-xl text-xs transition-all cursor-pointer shadow-lg shadow-emerald-500/20"
+                  >
+                    {t.playAgain}
+                  </button>
+                </motion.div>
+              ) : (
+                // Active Card to Sort
+                <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm space-y-4 text-center">
+                  <div className="p-6 bg-slate-50 rounded-xl border border-slate-100/50 relative">
+                    <span className="text-5xl block animate-bounce duration-1000">{gameWasteItems[currentWasteIndex].emoji}</span>
+                    <h5 className="text-xs font-extrabold text-slate-800 mt-3">{gameWasteItems[currentWasteIndex].name}</h5>
+                    <p className="text-[9px] text-slate-400 mt-0.5">{gameWasteItems[currentWasteIndex].desc}</p>
+                  </div>
+
+                  {/* Message Result */}
+                  {gameMessage ? (
+                    <motion.div 
+                      initial={{ opacity: 0, y: -5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={`p-3 rounded-xl text-[10px] text-left leading-relaxed ${
+                        gameMessage.isCorrect 
+                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-100' 
+                          : 'bg-red-50 text-red-800 border border-red-100'
+                      }`}
+                    >
+                      <div className="font-extrabold flex items-center gap-1 mb-1">
+                        <span>{gameMessage.isCorrect ? '✓' : '✗'}</span>
+                        <span>{gameMessage.isCorrect ? t.correct : t.incorrect}</span>
+                      </div>
+                      <p>{gameMessage.text}</p>
+                      
+                      <button
+                        onClick={handleNextItem}
+                        className="mt-2.5 w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-1.5 rounded-lg text-[9px] transition-all cursor-pointer"
+                      >
+                        {currentLang === 'fr' ? 'Élément Suivant →' : 'Next Item →'}
+                      </button>
+                    </motion.div>
+                  ) : (
+                    // Sort Buttons
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        onClick={() => handleSortItem(TrashType.RECYCLABLE)}
+                        className="bg-emerald-50 hover:bg-emerald-100 text-[#009E49] border border-emerald-200/60 font-black py-3 px-2 rounded-xl text-[10px] transition-all flex flex-col items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <span className="text-lg">♻️</span>
+                        <span>{t.recyclableBin}</span>
+                      </button>
+                      <button
+                        onClick={() => handleSortItem(TrashType.ROTTEN)}
+                        className="bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200/60 font-black py-3 px-2 rounded-xl text-[10px] transition-all flex flex-col items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <span className="text-lg">🍂</span>
+                        <span>{t.organicBin}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {/* E. LEADERBOARD TAB */}
+          {activeTab === 'leaderboard' && (
+            <motion.div
+              key="tab-leaderboard"
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -5 }}
+              className="space-y-3.5 pb-6"
+            >
+              {/* Header Card with Gabon colors strip */}
+              <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-xl border border-slate-800 relative overflow-hidden">
+                <div className="absolute top-0 left-0 right-0 h-1 flex">
+                  <div className="bg-[#009E49] h-full flex-1" />
+                  <div className="bg-[#FCD116] h-full flex-1" />
+                  <div className="bg-[#3A75C4] h-full flex-1" />
+                </div>
+                <div className="space-y-1 mt-2">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                    <Trophy className="w-4 h-4 text-yellow-400 fill-yellow-400/20 animate-pulse" />
+                    <span>{t.leaderboardHeader}</span>
+                  </h4>
+                  <p className="text-[10px] text-slate-300 leading-relaxed">
+                    {t.leaderboardDesc}
+                  </p>
+                </div>
+
+                {/* Rainy season indicator banner */}
+                <div className="mt-3 p-2.5 bg-sky-950/70 border border-sky-800/40 rounded-xl text-[9px] text-sky-200 leading-normal flex items-start gap-2">
+                  <span className="text-sm shrink-0">🌧️</span>
+                  <span>{t.leaderboardRainySeasonWarning}</span>
+                </div>
+              </div>
+
+              {/* Leader Highlight Banner */}
+              {(() => {
+                const sorted = [...neighborhoodStats].sort((a, b) => b.total - a.total);
+                const leader = sorted[0];
+                const isLeaderUserHome = currentUser?.neighborhood === leader?.name;
+
+                return (
+                  <div className="bg-gradient-to-tr from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/20 rounded-2xl p-4 shadow-sm relative overflow-hidden">
+                    <div className="absolute -right-3 -top-3 text-7xl opacity-15 select-none">🏆</div>
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-yellow-300 flex items-center justify-center text-white shadow-md border-2 border-amber-300 shrink-0">
+                        <Trophy className="w-6 h-6 text-amber-950 fill-amber-950/10 animate-bounce" />
+                      </div>
+                      <div className="space-y-0.5 min-w-0 flex-1">
+                        <span className="text-[8px] font-extrabold uppercase tracking-widest text-amber-600 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/10">
+                          {t.leaderboardLeadLabel}
+                        </span>
+                        <h4 className="text-xs font-extrabold text-slate-800 truncate mt-1">
+                          {leader?.name} {isLeaderUserHome && `(${currentLang === 'fr' ? 'Votre Quartier' : 'Your Neighborhood'})`}
+                        </h4>
+                        <p className="text-[9px] text-slate-500">
+                          {currentLang === 'fr' 
+                            ? `En tête de Libreville avec un volume impressionnant de ${leader?.total.toFixed(1)} kg !`
+                            : `Leading Libreville with an impressive ${leader?.total.toFixed(1)} kg sorted!`}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Interactive Cheer Action */}
+                    <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                      <p className="text-[8px] text-slate-400 italic">
+                        {cheeredNeighborhood === leader?.name 
+                          ? (currentLang === 'fr' ? '🎉 Claps envoyés ! Esprit d\'équipe actif.' : '🎉 Claps sent! Team spirit active.')
+                          : (currentLang === 'fr' ? 'Encouragez les éco-citoyens de Libreville !' : 'Cheer on Libreville eco-citizens!')}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCheeredNeighborhood(leader?.name);
+                          // Reset cheer state after 3 seconds
+                          setTimeout(() => setCheeredNeighborhood(null), 3000);
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 border ${
+                          cheeredNeighborhood === leader?.name
+                            ? 'bg-amber-500 border-amber-500 text-white shadow-inner'
+                            : 'bg-white hover:bg-amber-50 border-amber-200 text-amber-700 hover:text-amber-800 shadow-sm'
+                        }`}
+                      >
+                        <span>👏</span>
+                        <span>
+                          {cheeredNeighborhood === leader?.name 
+                            ? (currentLang === 'fr' ? 'Soutenu !' : 'Supported!') 
+                            : (currentLang === 'fr' ? 'Soutenir' : 'Cheer')}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Ranking List */}
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                <div className="p-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between text-[8px] font-extrabold text-slate-400 uppercase tracking-widest">
+                  <span>{t.leaderboardNeighborhood}</span>
+                  <span>{t.leaderboardScore}</span>
+                </div>
+
+                <div className="divide-y divide-slate-100 max-h-[220px] overflow-y-auto">
+                  {[...neighborhoodStats]
+                    .sort((a, b) => b.total - a.total)
+                    .map((item, index) => {
+                      const isUserHome = currentUser?.neighborhood === item.name;
+                      const isTop3 = index < 3;
+                      const monthlyTarget = item.name === 'Owendo' ? 1000 : 500;
+                      const pct = Math.min(100, Math.round((item.total / monthlyTarget) * 100));
+
+                      const rankEmoji = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : null;
+
+                      return (
+                        <div 
+                          key={`rank-${item.name}`} 
+                          className={`p-3 flex flex-col gap-2 transition-all ${
+                            isUserHome ? 'bg-emerald-50/40' : 'hover:bg-slate-50/50'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              {/* Rank Indicator */}
+                              <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-extrabold text-slate-600 shrink-0">
+                                {rankEmoji || (index + 1)}
+                              </div>
+                              <div className="truncate">
+                                <span className={`text-xs font-bold ${isUserHome ? 'text-[#009E49] font-black' : 'text-slate-700'}`}>
+                                  {item.name}
+                                </span>
+                                {isUserHome && (
+                                  <span className="ml-1.5 text-[7px] font-extrabold uppercase tracking-wide bg-[#009E49]/10 text-[#009E49] px-1 py-0.5 rounded-md">
+                                    {currentLang === 'fr' ? 'Chez vous' : 'Home'}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              <span className="text-xs font-black text-slate-800">{item.total.toFixed(0)} kg</span>
+                            </div>
+                          </div>
+
+                          {/* Progress bar and breakdown */}
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-[8px] text-slate-400 font-medium">
+                              <span className="flex items-center gap-2">
+                                <span className="text-[#009E49]">♻️ {item.recyclable.toFixed(0)} kg</span>
+                                <span className="text-amber-600">🍂 {item.rotten.toFixed(0)} kg</span>
+                              </span>
+                              <span>{pct}% / {monthlyTarget} kg</span>
+                            </div>
+                            <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                              <div 
+                                className={`h-full rounded-full transition-all duration-1000 ${
+                                  index === 0 ? 'bg-gradient-to-r from-amber-400 to-amber-500' :
+                                  isUserHome ? 'bg-[#009E49]' : 'bg-slate-400'
+                                }`}
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
               </div>
             </motion.div>
           )}
@@ -854,20 +1313,20 @@ export default function UserMobileApp({
         {/* Tab 1 */}
         <button
           onClick={() => setActiveTab('home')}
-          className={`flex flex-col items-center justify-center transition-all px-2.5 py-1 rounded-xl cursor-pointer ${
+          className={`flex flex-col items-center justify-center transition-all px-2 py-1 rounded-xl cursor-pointer ${
             activeTab === 'home'
               ? 'text-[#009E49] scale-105 bg-emerald-50/50 font-bold'
               : 'text-slate-400 hover:text-slate-600'
           }`}
         >
           <Home className="w-4.5 h-4.5" />
-          <span className="text-[8px] mt-0.5">{activeTab === 'home' ? 'Home' : 'Home'}</span>
+          <span className="text-[8px] mt-0.5">Home</span>
         </button>
 
         {/* Tab 2 */}
         <button
           onClick={() => setActiveTab('history')}
-          className={`flex flex-col items-center justify-center transition-all px-2.5 py-1 rounded-xl cursor-pointer ${
+          className={`flex flex-col items-center justify-center transition-all px-2 py-1 rounded-xl cursor-pointer ${
             activeTab === 'history'
               ? 'text-[#009E49] scale-105 bg-emerald-50/50 font-bold'
               : 'text-slate-400 hover:text-slate-600'
@@ -877,10 +1336,36 @@ export default function UserMobileApp({
           <span className="text-[8px] mt-0.5">{t.historyTitleShort}</span>
         </button>
 
-        {/* Tab 3 */}
+        {/* Tab 3 - Learn & Win Game */}
+        <button
+          onClick={() => setActiveTab('game')}
+          className={`flex flex-col items-center justify-center transition-all px-2 py-1 rounded-xl cursor-pointer ${
+            activeTab === 'game'
+              ? 'text-[#009E49] scale-105 bg-emerald-50/50 font-bold'
+              : 'text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          <Gamepad2 className="w-4.5 h-4.5" />
+          <span className="text-[8px] mt-0.5">{t.gameTab}</span>
+        </button>
+
+        {/* Tab 4 - Neighborhood Eco-Challenge Leaderboard */}
+        <button
+          onClick={() => setActiveTab('leaderboard')}
+          className={`flex flex-col items-center justify-center transition-all px-2 py-1 rounded-xl cursor-pointer ${
+            activeTab === 'leaderboard'
+              ? 'text-[#009E49] scale-105 bg-emerald-50/50 font-bold'
+              : 'text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          <Trophy className="w-4.5 h-4.5" />
+          <span className="text-[8px] mt-0.5">{t.leaderboardTab}</span>
+        </button>
+
+        {/* Tab 5 */}
         <button
           onClick={() => setActiveTab('profile')}
-          className={`flex flex-col items-center justify-center transition-all px-2.5 py-1 rounded-xl cursor-pointer ${
+          className={`flex flex-col items-center justify-center transition-all px-2 py-1 rounded-xl cursor-pointer ${
             activeTab === 'profile'
               ? 'text-[#009E49] scale-105 bg-emerald-50/50 font-bold'
               : 'text-slate-400 hover:text-slate-600'

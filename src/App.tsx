@@ -34,6 +34,9 @@ export default function App() {
   const [neighborhoodStats, setNeighborhoodStats] = useState(INITIAL_NEIGHBORHOOD_STATS);
   const [dailyStats, setDailyStats] = useState(INITIAL_DAILY_STATS);
 
+  // Active collection truck simulation state
+  const [activeSimulationRequest, setActiveSimulationRequest] = useState<CollectionRequest | null>(null);
+
   // Active logged-in citizen (Defaulting to u1 - Merveille Nkoghe for immediate interactive state)
   const [currentUser, setCurrentUser] = useState<User | null>(MOCK_USERS[0]);
   
@@ -47,16 +50,18 @@ export default function App() {
   // Notification system
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
 
-  // Set initial welcome notification based on language
+  // Auto-dismiss notifications after 4 seconds
   useEffect(() => {
-    setNotification({
-      message: t.welcomeSim,
-      type: "info"
-    });
-  }, [currentLang]);
+    if (notification) {
+      const timer = setTimeout(() => {
+        setNotification(null);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [notification]);
 
-  // Simulator View Mode: 'dual' (Side-by-side), 'citizen' (Mobile fullscreen), 'admin' (Desktop fullscreen)
-  const [viewMode, setViewMode] = useState<'dual' | 'citizen' | 'admin'>('dual');
+  // Simulator View Mode: 'citizen' (Mobile fullscreen), 'admin' (Desktop fullscreen)
+  const [viewMode, setViewMode] = useState<'citizen' | 'admin'>('citizen');
 
   // Citizen Actions
   const handleUserLogin = (phone: string, name: string, neighborhood: string) => {
@@ -168,7 +173,24 @@ export default function App() {
 
   // Admin Actions
   const handleConfirmPickup = (requestCode: string) => {
-    const matchedIdx = pendingRequests.findIndex((r) => r.id === requestCode);
+    // Look up pending request by either id or verification code
+    const request = pendingRequests.find(
+      (r) => r.id === requestCode || r.verification_code.toUpperCase() === requestCode.toUpperCase()
+    );
+    if (!request) return;
+
+    // Start simulation
+    setActiveSimulationRequest(request);
+    setNotification({
+      message: currentLang === 'fr' 
+        ? `🚚 Camion de collecte Kam-Tar en route vers ${request.neighborhood}...` 
+        : `🚚 Kam-Tar collection truck en route to ${request.neighborhood}...`,
+      type: 'info'
+    });
+  };
+
+  const handleSimulationComplete = (requestId: string) => {
+    const matchedIdx = pendingRequests.findIndex((r) => r.id === requestId);
     if (matchedIdx === -1) return;
 
     const request = pendingRequests[matchedIdx];
@@ -182,7 +204,7 @@ export default function App() {
     };
 
     // 1. Move from pending to completed
-    setPendingRequests(prev => prev.filter(r => r.id !== requestCode));
+    setPendingRequests(prev => prev.filter(r => r.id !== requestId));
     setCompletedRequests(prev => [completedReq, ...prev]);
 
     // 2. Add weight contribution to citizen stats
@@ -252,7 +274,7 @@ export default function App() {
       return updated;
     });
 
-    if (selectedRequestId === requestCode) {
+    if (selectedRequestId === requestId) {
       setSelectedRequestId(null);
     }
 
@@ -262,6 +284,9 @@ export default function App() {
         .replace('{weight}', request.quantity_value.toFixed(1)),
       type: 'success'
     });
+
+    // Reset simulation request trigger
+    setActiveSimulationRequest(null);
   };
 
   // Collector Simulator helper: Spawn random citizen request
@@ -347,292 +372,80 @@ export default function App() {
     recyclableWeight,
     rottenWeight,
     completedCount: completedRequests.length
-  };
-
-  const activeUserHistory = completedRequests.filter((r) => r.user_id === currentUser?.id);
+  };  const activeUserHistory = completedRequests.filter((r) => r.user_id === currentUser?.id);
   const activeUserRequest = pendingRequests.find((r) => r.user_id === currentUser?.id) || null;
 
+  if (viewMode === 'citizen') {
+    return (
+      <div className="h-screen h-[100dvh] w-screen bg-slate-50 flex items-center justify-center overflow-hidden">
+        <div className="w-full max-w-md bg-white h-full sm:h-[820px] sm:rounded-[24px] sm:shadow-2xl sm:border sm:border-slate-100 overflow-hidden flex flex-col relative">
+          
+          {/* Toast Notification overlay within the Citizen app container */}
+          {notification && (
+            <div className="absolute top-16 left-4 right-4 z-50 pointer-events-none">
+              <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold shadow-lg backdrop-blur-md animate-bounce ${
+                notification.type === 'success' ? 'bg-emerald-500/90 text-white' :
+                notification.type === 'error' ? 'bg-red-500/90 text-white' :
+                'bg-blue-600/90 text-white'
+              }`}>
+                <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                <span>{notification.message}</span>
+              </div>
+            </div>
+          )}
+
+          <UserMobileApp
+            currentUser={currentUser}
+            onLogin={handleUserLogin}
+            onLogout={handleUserLogout}
+            activeRequest={activeUserRequest}
+            onRequestCollection={handleRequestCollection}
+            onCancelRequest={handleCancelRequest}
+            userRequestsHistory={activeUserHistory}
+            currentLang={currentLang}
+            onSwitchToAdmin={() => setViewMode('admin')}
+            onChangeLang={(lang) => setCurrentLang(lang)}
+            neighborhoodStats={neighborhoodStats}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // viewMode === 'admin'
   return (
-    <div className="min-h-screen bg-slate-950 font-sans flex flex-col justify-between">
-      
-      {/* Top Universal Banner */}
-      <header className="bg-slate-900 border-b border-slate-800 px-4 py-4 sm:px-6 flex flex-col xl:flex-row items-center justify-between gap-4 shrink-0">
-        <div className="flex items-center gap-3 w-full xl:w-auto">
-          <div className="flex shrink-0">
-            <span className="w-2.5 h-6 bg-[#009E49] rounded-l" />
-            <span className="w-2.5 h-6 bg-[#FCD116]" />
-            <span className="w-2.5 h-6 bg-[#3A75C4] rounded-r" />
-          </div>
-          <div>
-            <h1 className="text-base sm:text-lg font-black text-white tracking-tight flex items-center gap-2">
-              {t.appTitle} <span className="text-xs text-[#009E49] font-medium hidden sm:inline">{t.solutionEco}</span>
-            </h1>
-            <p className="text-xs text-slate-400">{t.appSubtitle}</p>
-          </div>
-        </div>
-
-        {/* Universal Controller - Switch simulation perspectives & languages */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full xl:w-auto shrink-0 justify-end">
-          
-          {/* Language Selector Requested */}
-          <div className="flex items-center justify-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 shrink-0">
-            <button
-              onClick={() => setCurrentLang('fr')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-black tracking-tight transition-all cursor-pointer ${
-                currentLang === 'fr'
-                  ? 'bg-gradient-to-r from-[#009E49] to-emerald-600 text-white shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              FR
-            </button>
-            <button
-              onClick={() => setCurrentLang('en')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-black tracking-tight transition-all cursor-pointer ${
-                currentLang === 'en'
-                  ? 'bg-[#3A75C4] text-white shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              EN
-            </button>
-            <button
-              onClick={() => setCurrentLang('es')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-black tracking-tight transition-all cursor-pointer ${
-                currentLang === 'es'
-                  ? 'bg-amber-500 text-white shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              ES
-            </button>
-            <button
-              onClick={() => setCurrentLang('pt')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-black tracking-tight transition-all cursor-pointer ${
-                currentLang === 'pt'
-                  ? 'bg-[#3A75C4] text-white shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              PT
-            </button>
-          </div>
-
-          {/* Perspective View Selector */}
-          <div className="flex items-center justify-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 shrink-0">
-            <button
-              onClick={() => setViewMode('dual')}
-              className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                viewMode === 'dual'
-                  ? 'bg-slate-800 text-white shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Layout className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{t.simDual}</span>
-              <span className="sm:hidden">Dual</span>
-            </button>
-            
-            <button
-              onClick={() => setViewMode('citizen')}
-              className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                viewMode === 'citizen'
-                  ? 'bg-slate-800 text-[#009E49] shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Smartphone className="w-3.5 h-3.5 text-[#009E49]" />
-              <span className="hidden sm:inline">{t.simCitizen.split(' ')[0]}</span>
-              <span className="sm:hidden">App</span>
-            </button>
-
-            <button
-              onClick={() => setViewMode('admin')}
-              className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                viewMode === 'admin'
-                  ? 'bg-slate-800 text-sky-400 shadow'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5 text-sky-400" />
-              <span className="hidden sm:inline">{t.simAdmin.split(' ')[0]}</span>
-              <span className="sm:hidden">Admin</span>
-            </button>
-          </div>
-
-        </div>
-      </header>
-
-      {/* Synchronized Status / Notification Center */}
-      {notification && (
-        <div className="px-6 py-2 bg-slate-900 border-b border-slate-800 flex items-center justify-center shrink-0">
-          <div className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-[10px] sm:text-xs font-semibold ${
-            notification.type === 'success' ? 'bg-emerald-950/50 text-emerald-400 border border-emerald-900/40' :
-            notification.type === 'error' ? 'bg-red-950/50 text-red-400 border border-red-900/40' :
-            'bg-sky-950/50 text-sky-400 border border-sky-900/40'
-          }`}>
-            <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
-            <span>{notification.message}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Main Workspace Body */}
-      <main className="flex-1 p-4 sm:p-6 flex items-center justify-center overflow-y-auto">
-        {viewMode === 'dual' ? (
-          
-          /* DUAL PERSPECTIVES GRID (COTE-A-COTE) */
-          <div className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-stretch">
-            
-            {/* Left: Mobile Citizen perspective inside curved shell */}
-            <div className="lg:col-span-5 flex flex-col items-center justify-center">
-              <div className="text-center mb-2.5">
-                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-[#009E49] bg-emerald-950/60 border border-emerald-900 px-3 py-1 rounded-full">
-                  📱 Écran Smartphone Citoyen
-                </span>
-                <p className="text-[10px] text-slate-500 mt-1">Simulez l'envoi d'un sac de déchets</p>
-              </div>
-
-              {/* iPhone premium bezel wrap */}
-              <div className="w-full max-w-[340px] h-[640px] rounded-[42px] border-[12px] border-slate-900 bg-slate-950 shadow-2xl relative overflow-hidden flex flex-col justify-between shrink-0">
-                
-                {/* Dynamic Island notch */}
-                <div className="absolute top-2.5 left-1/2 transform -translate-x-1/2 w-28 h-5 bg-slate-900 rounded-full z-30 flex items-center justify-end px-4">
-                  <span className="w-1.5 h-1.5 rounded-full bg-slate-950" />
-                </div>
-
-                {/* Simulated status bar */}
-                <div className="h-6 bg-white w-full flex items-center justify-between px-6 pt-1 shrink-0 z-20">
-                  <span className="text-[9px] font-bold text-slate-800">21:04</span>
-                  <div className="flex items-center gap-1">
-                    {/* Signal */}
-                    <svg className="w-2.5 h-2.5 text-slate-800" viewBox="0 0 24 24" fill="currentColor">
-                      <rect x="2" y="18" width="3" height="4" rx="0.5" />
-                      <rect x="7" y="14" width="3" height="8" rx="0.5" />
-                      <rect x="12" y="10" width="3" height="12" rx="0.5" />
-                      <rect x="17" y="5" width="3" height="17" rx="0.5" />
-                    </svg>
-                    {/* Wifi */}
-                    <svg className="w-3 h-3 text-slate-800" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 21a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0-5a7 7 0 0 0-7 7h2a5 5 0 0 1 10 0h2a7 7 0 0 0-7-7zm0-5a12 12 0 0 0-12 12h2a10 10 0 0 1 20 0h2a12 12 0 0 0-12-12z"/>
-                    </svg>
-                  </div>
-                </div>
-
-                {/* React Mobile citizen app */}
-                <div className="flex-1 overflow-hidden relative bg-white">
-                  <UserMobileApp
-                    currentUser={currentUser}
-                    onLogin={handleUserLogin}
-                    onLogout={handleUserLogout}
-                    activeRequest={activeUserRequest}
-                    onRequestCollection={handleRequestCollection}
-                    onCancelRequest={handleCancelRequest}
-                    userRequestsHistory={activeUserHistory}
-                    currentLang={currentLang}
-                    onSwitchToAdmin={() => setViewMode('admin')}
-                  />
-                </div>
-              </div>
+    <div className="h-screen h-[100dvh] w-screen bg-slate-950 p-2 sm:p-6 flex items-center justify-center overflow-hidden">
+      <div className="w-full max-w-7xl h-full relative flex flex-col">
+        
+        {/* Toast Notification inside the Admin Dashboard */}
+        {notification && (
+          <div className="absolute top-24 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
+            <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold shadow-xl border ${
+              notification.type === 'success' ? 'bg-emerald-950/90 text-emerald-400 border-emerald-900/50' :
+              notification.type === 'error' ? 'bg-red-950/90 text-red-400 border-red-900/50' :
+              'bg-slate-900/90 text-slate-100 border-slate-800'
+            }`}>
+              <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+              <span>{notification.message}</span>
             </div>
-
-            {/* Right: Administrative map & Analytics (7 cols) */}
-            <div className="lg:col-span-7 flex flex-col justify-stretch">
-              <div className="text-center mb-2.5 mt-4 lg:mt-0">
-                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-sky-400 bg-slate-900 border border-slate-800 px-3 py-1 rounded-full">
-                  🖥️ Portail Camion de Collecte
-                </span>
-                <p className="text-[10px] text-slate-500 mt-1">Saisissez les codes pour valider le ramassage</p>
-              </div>
-
-              <div className="flex-1">
-                <AdminDashboard
-                  requests={pendingRequests}
-                  onConfirmPickup={handleConfirmPickup}
-                  selectedRequestId={selectedRequestId}
-                  onSelectRequest={(r) => setSelectedRequestId(r.id)}
-                  onSpawnRandomRequest={handleSpawnRandomRequest}
-                  totalStats={totalStats}
-                  neighborhoodStats={neighborhoodStats}
-                  dailyStats={dailyStats}
-                  currentLang={currentLang}
-                />
-              </div>
-            </div>
-
-          </div>
-        ) : viewMode === 'citizen' ? (
-          
-          /* CITIZEN PERSPECTIVE ONLY */
-          <div className="w-full flex flex-col items-center justify-center animate-fade-in">
-            <div className="w-full max-w-[340px] h-[640px] rounded-[42px] border-[12px] border-slate-900 bg-slate-950 shadow-2xl relative overflow-hidden flex flex-col justify-between shrink-0">
-              
-              <div className="absolute top-2.5 left-1/2 transform -translate-x-1/2 w-28 h-5 bg-slate-900 rounded-full z-30 flex items-center justify-end px-4">
-                <span className="w-1.5 h-1.5 rounded-full bg-slate-950" />
-              </div>
-
-              <div className="h-6 bg-white w-full flex items-center justify-between px-6 pt-1 shrink-0 z-20">
-                <span className="text-[9px] font-bold text-slate-800">21:04</span>
-                <div className="flex items-center gap-1">
-                  <svg className="w-2.5 h-2.5 text-slate-800" viewBox="0 0 24 24" fill="currentColor">
-                    <rect x="2" y="18" width="3" height="4" rx="0.5" />
-                    <rect x="7" y="14" width="3" height="8" rx="0.5" />
-                    <rect x="12" y="10" width="3" height="12" rx="0.5" />
-                    <rect x="17" y="5" width="3" height="17" rx="0.5" />
-                  </svg>
-                  <svg className="w-3 h-3 text-slate-800" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 21a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0-5a7 7 0 0 0-7 7h2a5 5 0 0 1 10 0h2a7 7 0 0 0-7-7zm0-5a12 12 0 0 0-12 12h2a10 10 0 0 1 20 0h2a12 12 0 0 0-12-12z"/>
-                  </svg>
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-hidden relative bg-white">
-                <UserMobileApp
-                  currentUser={currentUser}
-                  onLogin={handleUserLogin}
-                  onLogout={handleUserLogout}
-                  activeRequest={activeUserRequest}
-                  onRequestCollection={handleRequestCollection}
-                  onCancelRequest={handleCancelRequest}
-                  userRequestsHistory={activeUserHistory}
-                  currentLang={currentLang}
-                  onSwitchToAdmin={() => setViewMode('admin')}
-                />
-              </div>
-            </div>
-          </div>
-        ) : (
-          
-          /* ADMIN PERSPECTIVE ONLY */
-          <div className="w-full max-w-5xl mx-auto h-[620px] animate-fade-in flex flex-col">
-            <AdminDashboard
-              requests={pendingRequests}
-              onConfirmPickup={handleConfirmPickup}
-              selectedRequestId={selectedRequestId}
-              onSelectRequest={(r) => setSelectedRequestId(r.id)}
-              onSpawnRandomRequest={handleSpawnRandomRequest}
-              totalStats={totalStats}
-              neighborhoodStats={neighborhoodStats}
-              dailyStats={dailyStats}
-              currentLang={currentLang}
-            />
           </div>
         )}
-      </main>
 
-      {/* Dynamic Instruction Walkthrough Guide */}
-      <footer className="bg-slate-900 border-t border-slate-800 py-3 px-6 text-center text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
-        <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] text-slate-400 text-left">
-          <Info className="w-3.5 h-3.5 text-[#FCD116] shrink-0" />
-          <span><b>{t.guideSim.split(':')[0]}:</b> {t.guideSim.split(':').slice(1).join(':')}</span>
-        </div>
-        <div className="flex items-center gap-1 text-[9px] sm:text-[10px] text-slate-500 shrink-0">
-          <span>{t.footerCrafted.split('pour')[0]}</span>
-          <Heart className="w-3 h-3 text-red-500 fill-current animate-pulse" />
-          <span>pour {t.footerCrafted.split('pour')[1]}</span>
-        </div>
-      </footer>
-
+        <AdminDashboard
+          requests={pendingRequests}
+          onConfirmPickup={handleConfirmPickup}
+          selectedRequestId={selectedRequestId}
+          onSelectRequest={(r) => setSelectedRequestId(r.id)}
+          onSpawnRandomRequest={handleSpawnRandomRequest}
+          totalStats={totalStats}
+          neighborhoodStats={neighborhoodStats}
+          dailyStats={dailyStats}
+          currentLang={currentLang}
+          onSwitchToCitizen={() => setViewMode('citizen')}
+          activeSimulationRequest={activeSimulationRequest}
+          onSimulationComplete={handleSimulationComplete}
+        />
+      </div>
     </div>
   );
 }

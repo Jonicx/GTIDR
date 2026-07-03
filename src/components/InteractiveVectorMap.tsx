@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CollectionRequest, TrashType } from '../types';
 import { translations, Language } from '../utils/translations';
-import { MapPin, Info, Navigation, Anchor, TreePine, ShieldCheck } from 'lucide-react';
+import { MapPin, Info, Navigation, Anchor, TreePine, ShieldCheck, Truck } from 'lucide-react';
 
 interface InteractiveVectorMapProps {
   requests: CollectionRequest[];
   selectedRequestId: string | null;
   onSelectRequest: (request: CollectionRequest) => void;
   currentLang?: Language;
+  activeSimulationRequest: CollectionRequest | null;
+  onSimulationComplete: (requestId: string) => void;
 }
 
 export default function InteractiveVectorMap({
@@ -15,9 +17,50 @@ export default function InteractiveVectorMap({
   selectedRequestId,
   onSelectRequest,
   currentLang = 'fr',
+  activeSimulationRequest,
+  onSimulationComplete,
 }: InteractiveVectorMapProps) {
   const t = translations[currentLang] || translations.fr;
   const [hoveredSector, setHoveredSector] = useState<string | null>(null);
+
+  // Simulated Truck States
+  const [truckPos, setTruckPos] = useState({ x: 40, y: 82 }); // Starts at Owendo Depot
+  const [truckStatus, setTruckStatus] = useState<string>('');
+  const [isTruckMoving, setIsTruckMoving] = useState(false);
+
+  useEffect(() => {
+    if (activeSimulationRequest) {
+      setIsTruckMoving(true);
+      
+      const targetNeighborhood = activeSimulationRequest.neighborhood;
+      setTruckStatus(currentLang === 'fr' 
+        ? `🚚 Camion en route vers ${targetNeighborhood}...` 
+        : `🚚 Truck is en route to ${targetNeighborhood}...`
+      );
+
+      // Move truck to target coordinates
+      setTruckPos({ x: activeSimulationRequest.map_x, y: activeSimulationRequest.map_y });
+
+      // After 2.5s, update status to "arrived"
+      const arrivalTimer = setTimeout(() => {
+        setTruckStatus(currentLang === 'fr' 
+          ? `📍 Arrivé à ${targetNeighborhood} ! Collecte en cours...` 
+          : `📍 Arrived at ${targetNeighborhood}! Collecting...`
+        );
+        
+        // After another 1.2s, complete the simulation
+        const completeTimer = setTimeout(() => {
+          setIsTruckMoving(false);
+          setTruckStatus('');
+          onSimulationComplete(activeSimulationRequest.id);
+        }, 1200);
+
+        return () => clearTimeout(completeTimer);
+      }, 2500);
+
+      return () => clearTimeout(arrivalTimer);
+    }
+  }, [activeSimulationRequest, currentLang, onSimulationComplete]);
 
   // Libreville Sectors/Neighborhoods coordinates for visual zones in SVG
   const sectors = [
@@ -95,6 +138,34 @@ export default function InteractiveVectorMap({
 
   return (
     <div className="relative w-full h-[260px] sm:h-[320px] md:h-[380px] bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-inner">
+      {/* Truck Status Alert Banner */}
+      {truckStatus && (
+        <div className="absolute top-3 left-1/2 transform -translate-x-1/2 bg-sky-950/95 border border-sky-500/40 text-sky-200 px-3.5 py-2 rounded-xl text-[10px] sm:text-xs flex items-center gap-2 shadow-2xl animate-pulse z-50 backdrop-blur-md">
+          <Truck className="w-3.5 h-3.5 text-sky-400 animate-bounce" />
+          <span className="font-bold tracking-wide">{truckStatus}</span>
+        </div>
+      )}
+
+      {/* The Simulated moving collection truck */}
+      <div 
+        className="absolute z-40 transform -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+        style={{
+          left: `${truckPos.x}%`,
+          top: `${truckPos.y}%`,
+          transition: isTruckMoving ? 'left 2500ms cubic-bezier(0.25, 1, 0.5, 1), top 2500ms cubic-bezier(0.25, 1, 0.5, 1)' : 'none'
+        }}
+      >
+        <div className="relative">
+          {/* Animated visual ripple */}
+          {isTruckMoving && (
+            <span className="absolute -inset-2 bg-sky-400/30 rounded-full animate-ping pointer-events-none" />
+          )}
+          <div className="bg-sky-50 text-sky-600 p-1.5 sm:p-2 rounded-xl shadow-lg border-2 border-sky-500 flex items-center justify-center">
+            <Truck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-sky-600 fill-sky-100" />
+          </div>
+        </div>
+      </div>
+
       {/* Coastline / Water Background */}
       <div className="absolute inset-0 bg-slate-950 pointer-events-none">
         {/* Ocean simulation on the left */}

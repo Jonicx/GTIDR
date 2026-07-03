@@ -19,7 +19,8 @@ import {
   RefreshCw,
   Globe,
   Flame,
-  LayoutDashboard
+  LayoutDashboard,
+  Smartphone
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -37,6 +38,9 @@ interface AdminDashboardProps {
   neighborhoodStats: { name: string; recyclable: number; rotten: number; total: number }[];
   dailyStats: { date: string; recyclable: number; rotten: number }[];
   currentLang: Language;
+  onSwitchToCitizen?: () => void;
+  activeSimulationRequest: CollectionRequest | null;
+  onSimulationComplete: (requestId: string) => void;
 }
 
 export default function AdminDashboard({
@@ -49,6 +53,9 @@ export default function AdminDashboard({
   neighborhoodStats,
   dailyStats,
   currentLang,
+  onSwitchToCitizen,
+  activeSimulationRequest,
+  onSimulationComplete,
 }: AdminDashboardProps) {
   const t = translations[currentLang] || translations.fr;
 
@@ -91,6 +98,200 @@ export default function AdminDashboard({
     }
   };
 
+  const handleExportPDF = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Veuillez autoriser les fenêtres contextuelles (popups) pour exporter le rapport PDF.');
+      return;
+    }
+
+    const dateStr = new Date().toLocaleDateString(currentLang === 'fr' ? 'fr-FR' : 'en-US', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    const neighborhoodRows = neighborhoodStats.map(n => `
+      <tr>
+        <td style="padding: 12px 10px; border-bottom: 1px solid #e2e8f0; font-weight: bold; color: #1e293b;">${n.name}</td>
+        <td style="padding: 12px 10px; border-bottom: 1px solid #e2e8f0; text-align: right; color: #009e49; font-weight: bold;">${n.recyclable.toFixed(1)} kg</td>
+        <td style="padding: 12px 10px; border-bottom: 1px solid #e2e8f0; text-align: right; color: #d97706; font-weight: bold;">${n.rotten.toFixed(1)} kg</td>
+        <td style="padding: 12px 10px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 800; color: #0f172a; background-color: #f8fafc;">${n.total.toFixed(1)} kg</td>
+      </tr>
+    `).join('');
+
+    const co2Reduction = (totalStats.recyclableWeight * 1.5 + totalStats.rottenWeight * 0.8).toFixed(1);
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>GTIDR - Rapport Municipal de Collecte</title>
+          <style>
+            body {
+              font-family: system-ui, -apple-system, sans-serif;
+              color: #1e293b;
+              margin: 40px;
+              line-height: 1.5;
+            }
+            .header {
+              border-bottom: 3px solid #009E49;
+              padding-bottom: 20px;
+              margin-bottom: 30px;
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-end;
+            }
+            .title-section h1 {
+              font-size: 24px;
+              margin: 0;
+              color: #0f172a;
+              font-weight: 900;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+            }
+            .title-section p {
+              margin: 5px 0 0 0;
+              font-size: 13px;
+              color: #64748b;
+            }
+            .gabon-colors {
+              display: flex;
+              height: 6px;
+              margin-top: 15px;
+              width: 120px;
+              border-radius: 3px;
+              overflow: hidden;
+            }
+            .green-bar { background-color: #009E49; flex: 1; }
+            .yellow-bar { background-color: #FCD116; flex: 1; }
+            .blue-bar { background-color: #3A75C4; flex: 1; }
+            .meta {
+              text-align: right;
+              font-size: 11px;
+              color: #64748b;
+            }
+            .summary-cards {
+              display: grid;
+              grid-template-columns: repeat(3, 1fr);
+              gap: 20px;
+              margin-bottom: 40px;
+            }
+            .card {
+              border: 1px solid #e2e8f0;
+              border-radius: 12px;
+              padding: 15px;
+              background-color: #f8fafc;
+            }
+            .card-title {
+              font-size: 10px;
+              font-weight: bold;
+              color: #64748b;
+              text-transform: uppercase;
+              margin-bottom: 5px;
+            }
+            .card-val {
+              font-size: 20px;
+              font-weight: 900;
+              color: #0f172a;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-bottom: 40px;
+            }
+            th {
+              background-color: #f1f5f9;
+              padding: 12px 10px;
+              font-size: 11px;
+              font-weight: bold;
+              text-transform: uppercase;
+              color: #475569;
+              border-bottom: 2px solid #cbd5e1;
+            }
+            .footer {
+              border-top: 1px solid #e2e8f0;
+              padding-top: 15px;
+              font-size: 10px;
+              color: #94a3b8;
+              text-align: center;
+              margin-top: 50px;
+            }
+            @media print {
+              body { margin: 20px; }
+              .no-print { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="title-section">
+              <h1>GTIDR Gabon</h1>
+              <p>Rapport d'Analyse Municipale des Collectes de Déchets</p>
+              <div class="gabon-colors">
+                <div class="green-bar"></div>
+                <div class="yellow-bar"></div>
+                <div class="blue-bar"></div>
+              </div>
+            </div>
+            <div class="meta">
+              <div><strong>Généré le:</strong> ${dateStr}</div>
+              <div><strong>Portée:</strong> Grand Libreville (Estuaire)</div>
+              <div><strong>Statut:</strong> Officiel / Certifié</div>
+            </div>
+          </div>
+
+          <div class="summary-cards">
+            <div class="card" style="border-left: 4px solid #009E49;">
+              <div class="card-title">Volume Total Collecté</div>
+              <div class="card-val">${totalStats.totalWeight.toFixed(1)} kg</div>
+            </div>
+            <div class="card" style="border-left: 4px solid #3A75C4;">
+              <div class="card-title">Plastiques Recyclés (PET/Alu)</div>
+              <div class="card-val">${totalStats.recyclableWeight.toFixed(1)} kg</div>
+            </div>
+            <div class="card" style="border-left: 4px solid #FCD116;">
+              <div class="card-title">Impact Évité (CO2)</div>
+              <div class="card-val">~ ${co2Reduction} kg CO2</div>
+            </div>
+          </div>
+
+          <h3 style="font-size: 14px; margin-bottom: 15px; color: #0f172a; text-transform: uppercase; border-left: 3px solid #3A75C4; padding-left: 8px; font-weight: 800;">
+            Rendement Analytique par Quartier / Secteur
+          </h3>
+          <table>
+            <thead>
+              <tr>
+                <th style="text-align: left;">Secteur / Quartier</th>
+                <th style="text-align: right;">Volume Recyclable (kg)</th>
+                <th style="text-align: right;">Volume Compostable (kg)</th>
+                <th style="text-align: right;">Total Collecté (kg)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${neighborhoodRows}
+            </tbody>
+          </table>
+
+          <div class="footer">
+            <p>Ce document est un rapport officiel généré automatiquement par la plateforme GTIDR Gabon de tri sélectif.</p>
+            <p>© ${new Date().getFullYear()} GTIDR Libreville. Tous droits réservés.</p>
+          </div>
+
+          <script>
+            window.onload = function() {
+              window.print();
+              setTimeout(function() { window.close(); }, 500);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   return (
     <div className="bg-slate-900 text-slate-100 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden flex flex-col h-full w-full">
       
@@ -111,30 +312,42 @@ export default function AdminDashboard({
           </div>
         </div>
 
-        {/* Tab Buttons */}
-        <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800 self-start sm:self-center">
-          <button
-            onClick={() => setAdminTab('map')}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-              adminTab === 'map'
-                ? 'bg-[#3A75C4] text-white shadow'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <MapPin className="w-3.5 h-3.5" />
-            <span>{t.adminMapTab}</span>
-          </button>
-          <button
-            onClick={() => setAdminTab('analytics')}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
-              adminTab === 'analytics'
-                ? 'bg-[#3A75C4] text-white shadow'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <BarChart3 className="w-3.5 h-3.5" />
-            <span>{t.adminAnalyticsTab}</span>
-          </button>
+        {/* Tab Buttons & Back to Citizen Button */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800">
+            <button
+              onClick={() => setAdminTab('map')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                adminTab === 'map'
+                  ? 'bg-[#3A75C4] text-white shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <MapPin className="w-3.5 h-3.5" />
+              <span>{t.adminMapTab}</span>
+            </button>
+            <button
+              onClick={() => setAdminTab('analytics')}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                adminTab === 'analytics'
+                  ? 'bg-[#3A75C4] text-white shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <BarChart3 className="w-3.5 h-3.5" />
+              <span>{t.adminAnalyticsTab}</span>
+            </button>
+          </div>
+
+          {onSwitchToCitizen && (
+            <button
+              onClick={onSwitchToCitizen}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold bg-[#009E49] hover:bg-emerald-600 text-white transition-all shadow-md shadow-emerald-950/20 cursor-pointer"
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>{t.simCitizen}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -169,6 +382,9 @@ export default function AdminDashboard({
                 requests={requests}
                 selectedRequestId={selectedRequestId}
                 onSelectRequest={onSelectRequest}
+                currentLang={currentLang}
+                activeSimulationRequest={activeSimulationRequest}
+                onSimulationComplete={onSimulationComplete}
               />
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
@@ -313,6 +529,30 @@ export default function AdminDashboard({
           /* VIEW 2: ANALYTICS & VOLUMES */
           <div className="space-y-6">
             
+            {/* Download Report Row */}
+            <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg">
+              <div className="text-center sm:text-left space-y-1">
+                <h4 className="text-xs sm:text-sm font-extrabold text-white flex items-center justify-center sm:justify-start gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#009E49]" />
+                  <span>{currentLang === 'fr' ? 'Rapports Administratifs Municipaux' : 'Municipal Administrative Reports'}</span>
+                </h4>
+                <p className="text-[10px] sm:text-xs text-slate-400">
+                  {currentLang === 'fr' 
+                    ? 'Téléchargez le rapport officiel au format PDF contenant l\'analyse détaillée des quartiers (Akanda, Owendo, Glass, etc.).'
+                    : 'Download the official PDF report containing the detailed analysis of neighborhoods.'}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleExportPDF}
+                className="w-full sm:w-auto shrink-0 flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl transition-all shadow-lg shadow-emerald-950/20 active:scale-95 cursor-pointer border border-emerald-500"
+              >
+                <TrendingUp className="w-4 h-4 text-emerald-100 rotate-90" />
+                <span>{t.generateReportBtn}</span>
+              </button>
+            </div>
+
             {/* Top Grid Highlight Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
               <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3 sm:p-4">

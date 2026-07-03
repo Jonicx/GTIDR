@@ -26,6 +26,7 @@ export interface User {
   recyclables_weight: number; // in kg
   rotten_weight: number; // in kg
   requests_count: number;
+  is_certified_recycler?: boolean;
 }
 
 export interface CollectionRequest {
